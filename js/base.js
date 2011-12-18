@@ -11,22 +11,55 @@
 */
 
 
-Zapoc = {};
+Zapoc = {
+    currentLevel: 0
+};
 
-
+// Sprites
+// ------------------------------------------------------------------
+SpriteCords = {
+    zombies: {
+        normal: [
+            'rgb(0, 90, 230)',
+            'rgb(150, 190, 30)',
+            'rgb(250, 20, 80)'
+        ]
+    }
+};
 
 // Drawing
 // ------------------------------------------------------------------
 Zapoc.renderRound = function() {
     this.ctx.clearRect(0, 0, this.width, this.height);
+    this.drawBackground();
 
-    for (var i = 0; i < this.actors.length; i++) {
-        var actor = this.actors[i];
-        this.moveActor(actor);
-        this.drawActor(this.actors[i]);
+    for (var i = 0; i < this.gameObjects.length; i++) {
+
+        var go = this.gameObjects[i];
+
+        if (!go.isToBeDeleted) {
+            this.moveGameObject(go);
+            this.drawGameObject(go);
+        } else {
+            // remove game object
+            this.gameObjects.splice(i, 1);
+            console.log('Deleted ', go);
+
+            this.enemyCount -= 1;
+
+            if (this.enemyCount > 0) {
+                var delay =  150 + Math.random() * 300;
+                setTimeout(function() {
+                    Zapoc.gameObjects.push(new Zapoc.Zombie('normal'));
+                    }, delay);
+            } else {
+                // All enemies killed
+                // end round
+                console.log('Round End.');
+            }
+        }
     }
 };
-
 
 
 Zapoc.drawSprite = function(x, y, w, h) {
@@ -35,25 +68,26 @@ Zapoc.drawSprite = function(x, y, w, h) {
 Zapoc.drawText = function(text, x, y, size, color) {
 };
 
-Zapoc.moveActor = function(actor) {
-    if (actor.x + actor.xSpeed > Zapoc.width ||
-        actor.x + actor.xSpeed < 0 - actor.width
-    ) {
-        actor.xSpeed *= -1;
-    }
-
-    if (actor.y + actor.ySpeed > Zapoc.height ||
-        actor.y + actor.height - actor.ySpeed < 0
-    ) {
-        actor.ySpeed *= -1;
-    }
-
-    actor.x += actor.xSpeed;
-    actor.y += actor.ySpeed;
+Zapoc.drawBackground = function() {
+    // stub background
+    this.fillRect(0, 0, this.width, this.height, 'rgb(125, 20, 160)');
 };
 
-Zapoc.drawActor = function(actor) {
-    this.fillRect(actor.x, actor.y, actor.width, actor.height, 'rgb(0, 0, 0)');
+Zapoc.moveGameObject = function(go) {
+    if (go.x + go.xSpeed > Zapoc.width ||
+        go.x + go.xSpeed < 0 - go.width ||
+        go.y + go.ySpeed > Zapoc.height ||
+        go.y + go.ySpeed < 0 - go.height
+    ) {
+        go.onLeaveScreen();
+    }
+
+    go.x += go.xSpeed;
+    go.y += go.ySpeed;
+};
+
+Zapoc.drawGameObject = function(go) {
+    this.fillRect(go.x, go.y, go.width, go.height, go.spriteMap);
 };
 
 
@@ -65,15 +99,17 @@ Zapoc.fillRect = function(x, y, w, h, colour) {
 Zapoc.clicked = function(event) {
     var xPos = event.offsetX;
     var yPos = event.offsetY;
-    
-    for (var i = 0; i < Zapoc.actors.length; i++) {
-        var actor = Zapoc.actors[i];
-        if (xPos > actor.x &&
-            xPos < actor.x + actor.width &&
-            yPos > actor.y &&
-            yPos < actor.y + actor.height )
+
+    for (var i = 0; i < Zapoc.gameObjects.length; i++) {
+        var go = Zapoc.gameObjects[i];
+        if (xPos > go.x &&
+            xPos < go.x + go.width &&
+            yPos > go.y &&
+            yPos < go.y + go.height)
         {
-            actor.health -= 1;
+            // do something to the actor
+            console.log('hit ', go);
+            go.onHit();
         }
     }
 };
@@ -82,43 +118,54 @@ Zapoc.clicked = function(event) {
 
 // Actors (Zombies, power-ups, grenades etc.)
 // ------------------------------------------------------------------
-Zapoc.Actor = function() {
+Zapoc.GameObject = function() {
+    this.isToBeDeleted = false;
+};
+
+Zapoc.Zombie = new Zapoc.GameObject();
+
+Zapoc.Zombie = function() {
+};
+
+Zapoc.Zombie = function(zombieType) {
+    this.zombieType = zombieType;
     this.health = 10;
-    this.x = 90;
-    this.y = 90;
-    this.xSpeed = 1;
+    this.xSpeed =  0.6 + Math.random() * 0.3;
+
+    // set direction
+    if (Math.round(Math.random())) {
+        this.xSpeed *= -1;
+    }
+
     this.ySpeed = 0;
     this.width = 40;
     this.height = 90;
+    this.x = (this.xSpeed > 0) ? 0 - this.width : Zapoc.width;
+    this.y = 90;
+    
+    var randomSkinID = Math.round(SpriteCords.zombies[this.zombieType].length * Math.random());
+    this.spriteMap = SpriteCords.zombies[zombieType][randomSkinID];
+    Zapoc.GameObject.call(this, arguments);
 };
 
-Zapoc.Zombie = new Zapoc.Actor();
-Zapoc.Zombie = function() {
-    
-}
-Zapoc.Zombie = function(type) {
-    Zapoc.Actor.call(this);
-    this.skin = type;
-}
-Zapoc.Zombie.prototype = new Zapoc.Zombie();
-Zapoc.Zombie.prototype.constructor = Zapoc.Zombie;
-
-
-
-// Player
-// ------------------------------------------------------------------
-Zapoc.actors = [];
-Zapoc.actors.push(new Zapoc.Zombie('normal'));
-
-
-// Sprites
-// ------------------------------------------------------------------
-SpriteCords = {
-    zombies: {
-        normal_1: [[0, 0, 100, 100], [0, 0, 100, 100], [0, 0, 100, 100]],
-        normal_2: [[0, 0, 100, 100], [0, 0, 100, 100], [0, 0, 100, 100]]
+Zapoc.Zombie.prototype.onHit = function() {
+    this.health -= 1;
+    if (this.health <= 0) {
+        this.isToBeDeleted = true;
     }
 };
+
+Zapoc.Zombie.prototype.onLeaveScreen = function() {
+    this.isToBeDeleted = true;
+};
+
+
+// 
+// ------------------------------------------------------------------
+
+
+
+
 
 // Levels
 // ------------------------------------------------------------------
@@ -127,19 +174,20 @@ Zapoc.levels = {
         zombieTypes: ['normal'],
         background: 'street.png',
         wallHeight: 100,
-        rounds: 3
+        rounds: 3,
+        enemyCount: 10
     },
     1: {
         zombieTypes: ['normal', 'soilder'],
         background: 'bridge.png',
         wallHeight: 100,
-        rounds: 3,
+        rounds: 3
     },
     2: {
         zombieTypes: ['soilder', 'scientist'],
         background: 'lab.png',
         wallHeight: 200,
-        rounds: 4,
+        rounds: 4
     }
 };
 
@@ -160,6 +208,12 @@ Zapoc.start = function() {
     this.setupCanvas();
     Zapoc.fillRect(20, 40, 100, 90, 'rgb(210, 40, 190)');
     this.ticker = setInterval(this.gameTick, 30 / 100);
+
+    this.enemyCount = this.levels[this.currentLevel].enemyCount;
+    Zapoc.gameObjects = [];
+    Zapoc.gameObjects.push(new Zapoc.Zombie('normal'));
+
+
 
     var stopBtn = document.getElementById('stop');
     stopBtn.addEventListener('click', function() {
