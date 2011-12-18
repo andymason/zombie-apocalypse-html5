@@ -8,6 +8,9 @@
     Levels;
     Sound;
 
+    TODO:
+        * Use a second canvas to flip spite images with .transform
+
 */
 
 
@@ -17,11 +20,16 @@ Zapoc = {
         cursorX: 0,
         cursorY: 0,
         grenadeCount: 3,
-        bulletCount: 100,
+        bulletCount: 500,
         health: 100
     },
+    shotsFired: 0,
+    hits: 0,
+    accuracy: 0,
     shootingDelay: 20,
-    shootingCount: 0
+    shootingCount: 0,
+    grenadeFlashLength: 30,
+    grenadeFlashCount: 0
 };
 
 // Sprites
@@ -30,9 +38,7 @@ Zapoc = {
 SpriteCords = {
     zombies: {
         normal: [
-            'rgb(0, 90, 230)',
-            'rgb(150, 190, 30)',
-            'rgb(250, 20, 80)'
+            [[132, 0, 45, 96], [179, 0, 45, 95], [226, 0, 30, 95]]
         ]
     }
 };
@@ -56,7 +62,7 @@ Zapoc.renderRound = function() {
                     Zapoc.shootingCount -= 1;
                 } else {
                     Zapoc.shootingCount = Zapoc.shootingDelay;
-                    console.log('fire');
+                    Zapoc.shotsFired += 1;
                     Zapoc.player.bulletCount -= 1;
 
                     var x = Zapoc.player.cursorX;
@@ -69,11 +75,11 @@ Zapoc.renderRound = function() {
                     {
                         // do something to the actor
                         console.log('hit ', go);
+                        Zapoc.hits += 1;
                         go.onHit();
                     }
                 }
             } else if (Zapoc.isGrenadeExplosion) {
-                Zapoc.isGrenadeExplosion = false;
                 go.onGrenade();
             }
 
@@ -91,17 +97,34 @@ Zapoc.renderRound = function() {
                 // All enemies killed
                 // end round
                 console.log('Round End.');
+                Zapoc.drawText('Round end', 260, 130);
+                clearInterval(Zapoc.ticker);
             }
         }
     }
 
-    Zapoc.drawText('Bullets ' + Zapoc.player.bulletCount, 10, 10);
-    Zapoc.drawText('Zombies left ' + this.enemyCount, 10, 24);
-    
+    // Grenade flash
+    if (Zapoc.grenadeFlashCount > 0) {
+        Zapoc.grenadeFlashCount -= 1;
+        this.fillRect(0, 0, this.width, this.height, 'rgba(255, 255, 255, 0.8)');
+    }
+
+    Zapoc.isGrenadeExplosion = false;
+
+    Zapoc.accuracy = Math.round((Zapoc.hits / Zapoc.shotsFired) * 100);
+
+    Zapoc.drawText('Bullets left ' + Zapoc.player.bulletCount, 10, 10);
+    Zapoc.drawText('Grenades left ' + Zapoc.player.grenadeCount, 10, 24);
+    Zapoc.drawText('Zombies left ' + this.enemyCount, 10, 38);
+    Zapoc.drawText('Shots fired ' + Zapoc.shotsFired, 10, 52);
+    Zapoc.drawText('Hits ' + Zapoc.hits, 10, 66);
+    Zapoc.drawText('Accuracy ' + Zapoc.accuracy + '%', 10, 80);
 };
 
 
-Zapoc.drawSprite = function(x, y, w, h) {
+
+Zapoc.drawSprite = function(x, y, w, h, destX, destY) {
+    this.ctx.drawImage(this.spriteSheet, x, y, w, h, destX, destY, w, h);
 };
 
 Zapoc.drawText = function(text, x, y, size, color) {
@@ -126,7 +149,14 @@ Zapoc.moveGameObject = function(go) {
 };
 
 Zapoc.drawGameObject = function(go) {
-    this.fillRect(go.x, go.y, go.width, go.height, go.spriteMap);
+    Zapoc.drawSprite(
+        go.spriteMap[go.skinIndex][0],
+        go.spriteMap[go.skinIndex][1],
+        go.width,
+        go.height,
+        go.x,
+        go.y
+    );
 };
 
 
@@ -159,6 +189,7 @@ Zapoc.throwGrenade = function(event) {
     if (Zapoc.player.grenadeCount > 0) {
         Zapoc.player.grenadeCount -= 1;
         Zapoc.isGrenadeExplosion = true;
+        Zapoc.grenadeFlashCount = Zapoc.grenadeFlashLength;
         console.log('throw grenade');
     }
 };
@@ -184,8 +215,15 @@ Zapoc.GameObject = function() {
 //Zapoc.Zombie = new Zapoc.GameObject();
 Zapoc.Zombie = function(zombieType) {
     this.zombieType = zombieType;
-    this.health = 10;
+    this.maxHealth = 10;
+    this.currentHealth = this.maxHealth;
     this.xSpeed = 0.6 + Math.random() * 0.3;
+
+    var randomSkinID = Math.round(
+        (SpriteCords.zombies[this.zombieType].length - 1) * Math.random()
+    );
+    this.spriteMap = SpriteCords.zombies[zombieType][randomSkinID];
+    this.skinIndex = 0;
 
     // set direction
     if (Math.round(Math.random())) {
@@ -193,23 +231,22 @@ Zapoc.Zombie = function(zombieType) {
     }
 
     this.ySpeed = 0;
-    this.width = 40;
-    this.height = 90;
+    this.width = this.spriteMap[this.skinIndex][2];
+    this.height = this.spriteMap[this.skinIndex][3];
     this.x = (this.xSpeed > 0) ? 0 - this.width : Zapoc.width;
     this.y = 90;
-
-    var randomSkinID = Math.round(
-        (SpriteCords.zombies[this.zombieType].length - 1) * Math.random()
-    );
-    this.spriteMap = SpriteCords.zombies[zombieType][randomSkinID];
 
     Zapoc.GameObject.call(this, arguments);
 };
 
 Zapoc.Zombie.prototype.onHit = function() {
-    this.health -= 1;
-    if (this.health <= 0) {
+    this.currentHealth -= 1;
+    if (this.currentHealth <= 0) {
         this.isToBeDeleted = true;
+    } else if (this.currentHealth < this.maxHealth / 3) {
+        this.skinIndex = 2;
+    } else if (this.currentHealth < (this.maxHealth / 3) * 2) {
+        this.skinIndex = 1;
     }
 };
 
@@ -274,6 +311,8 @@ Zapoc.start = function() {
     this.enemyCount = this.levels[this.currentLevel].enemyCount;
     Zapoc.gameObjects = [];
     Zapoc.gameObjects.push(new Zapoc.Zombie('normal'));
+    Zapoc.gameObjects.push(new Zapoc.Zombie('normal'));
+    console.log(Zapoc.gameObjects);
 
     this.spriteSheet = document.createElement('img');
     this.spriteSheet.src = 'images/sprite_sheet.png';
@@ -284,7 +323,6 @@ Zapoc.start = function() {
 
     var stopBtn = document.getElementById('stop');
     stopBtn.addEventListener('click', function() {
-        console.log('df');
         clearInterval(Zapoc.ticker);
     });
 
@@ -303,12 +341,12 @@ Zapoc.drawText = function(text, xpos, ypos) {
     var currentXPos = xpos;
     var letterSpace = 1;
 
-    for (var i=0; i < text.length; i++) {
+    for (var i = 0; i < text.length; i++) {
         var letter = text[i].toUpperCase();
 
-        if (letter === " ") {
+        if (letter === ' ') {
             currentXPos += 10;
-        } else if(typeof BitmapFontMap[letter] !== 'undefined') {
+        } else if (typeof BitmapFontMap[letter] !== 'undefined') {
             var ch = BitmapFontMap[letter];
             Zapoc.ctx.drawImage(
                 this.spriteSheet,
@@ -316,7 +354,7 @@ Zapoc.drawText = function(text, xpos, ypos) {
                 ch[1],
                 ch[2],
                 ch[3],
-                currentXPos, 
+                currentXPos,
                 ypos,
                 ch[2],
                 ch[3]
@@ -336,8 +374,6 @@ BitmapFontMap = {
     'E': [44, 3, 7, 10],
     'F': [56, 3, 7, 10],
     'G': [65, 3, 10, 11],
-    
-
     'H': [1, 16, 8, 10],
     'I': [12, 16, 2, 10],
     'J': [18, 16, 6, 11],
@@ -357,7 +393,6 @@ BitmapFontMap = {
     'X': [25, 42, 9, 10],
     'Y': [36, 42, 9, 10],
     'Z': [47, 42, 8, 10],
-
     '0': [57, 42, 7, 11],
     '1': [67, 42, 4, 10],
     '2': [0, 55, 7, 10],
